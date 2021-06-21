@@ -2,6 +2,8 @@ import cluster from 'cluster'
 
 let initMem = null
 
+/* eslint-disable jsdoc/require-jsdoc */
+
 function executeMemTest() {
   if (cluster.isMaster) {
     cluster.setupMaster({ execArgv: ['--expose-gc'] })

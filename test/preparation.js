@@ -2,6 +2,8 @@ import { Test, assert } from '@nodutilus/test'
 
 const { ok, equal, deepEqual, throws, doesNotThrow } = assert
 
+/* eslint-disable jsdoc/require-jsdoc */
+
 
 class MyTestName extends Test {
 

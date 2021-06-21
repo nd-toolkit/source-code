@@ -1,15 +1,19 @@
 import { Test } from '@nodutilus/test'
 
 
+/**
+ *  Проверка обработки ошибки в событиях тестов,
+ *    в результате общий процесс выполнения тестов завершается ошибкой
+ */
 class Example extends Test {
 
+  /** Завершаем событие ошибкой */
   [Test.afterEach]() {
     throw new Error('afterEach')
   }
 
-  success() {
-    return true
-  }
+  /** Сам тест выполняется без ошибок */
+  success() { }
 
 }
 

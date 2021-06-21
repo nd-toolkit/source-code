@@ -1,163 +1,177 @@
 /** @module @nodutilus/fs */
 
-import { dirname, join } from 'path'
+import { isAbsolute, posix } from 'path'
 import { promises as fsPromises, constants as fsConstants } from 'fs'
 
+const { dirname, join, relative } = posix
 const { COPYFILE_EXCL } = fsConstants
-const { copyFile, mkdir, readdir, readFile, rmdir, stat, writeFile } = fsPromises
-/**
- * @typedef CONSTANTS
- * @property {number} COPY_EXCL
- * @property {number} COPY_RMNONEXISTENT
- * @property {number} SYMLINK_EXCL
- * @property {number} SYMLINK_RMNONEXISTENT
- * @property {number} WALK_FILEFIRST
- * @property {number} WRITE_EXCL
- */
-/** @type {CONSTANTS} */
-const constants = Object.create(null)
-const COPY_EXCL = constants.COPY_EXCL = 0b0001
-const COPY_RMNONEXISTENT = constants.COPY_RMNONEXISTENT = 0b0010
-const WALK_FILEFIRST = constants.WALK_FILEFIRST = 0b0100
-const WRITE_EXCL = constants.WRITE_EXCL = 0b1000
+const { copyFile, mkdir, readdir, readFile, rm, stat, writeFile } = fsPromises
+/** @type {import('@nodutilus/fs').WalkFunction} */
+// @ts-ignore
+const walk = __walkCommon
 
 
-/**
- * @callback Walker
- * @param {string} path
- * @param {import('fs').Dirent} dirent
- * @returns {boolean|Promise<boolean>}
- */
-/**
- * @param {string} path
- * @param {number|Walker} [flags]
- * @param {Walker} [walker]
- * @returns {Promise<void>}
- */
-async function walk(path, flags, walker) {
-  if (typeof flags === 'function') {
-    [flags, walker] = [walker, flags]
+/** @type {import('@nodutilus/fs').WalkFunctionCommon} */
+function __walkCommon(path, options = {}, walker = undefined) {
+  const prefix = isAbsolute(path) ? '' : './'
+  const include = __normalizeSearchingRegExp(options.include)
+  const exclude = __normalizeSearchingRegExp(options.exclude)
+
+  walker = (typeof options === 'function' ? options : walker) || options.walker
+
+  // win32 to posix (https://github.com/nodejs/node/issues/12298)
+  path = path.replaceAll('\\', '/')
+
+  if (walker) {
+    return (async () => {
+      const __walker = __walk(path, { prefix, include, exclude })
+      let next = await __walker.next()
+
+      while (!next.done && next.value) {
+        next = await __walker.next(await walker(...next.value))
+      }
+    })()
+  } else {
+    return __walk(path, { prefix, include, exclude })
   }
-  await __walk('.', { root: path, flags, walker })
 }
 
 
-/**
- * @typedef WalkOptions
- * @property {string} root
- * @property {number} [flags]
- * @property {Walker} walker
- */
-/**
- * @param {string} path
- * @param {WalkOptions} options
- * @returns {Promise<void>}
- */
-async function __walk(path, options) {
-  const { root, flags, walker } = options
-  const files = await readdir(join(root, path), { withFileTypes: true })
+/** @type {import('@nodutilus/fs').NormalizeSearchingRegExp} */
+function __normalizeSearchingRegExp(sRegExp) {
+  /** @type {import('@nodutilus/fs').InnerSearchingRegExp} */
+  let innerSRegExp
 
-  for (const file of files) {
-    const filePath = join(path, file.name)
-
-    if (file.isDirectory()) {
-      if (flags & WALK_FILEFIRST) {
-        await __walk(filePath, options)
-        await walker(filePath, file)
-      } else {
-        const needNested = await walker(filePath, file)
-
-        if (needNested !== false) {
-          await __walk(filePath, options)
-        }
-      }
+  if (sRegExp) {
+    if (sRegExp instanceof Array) {
+      innerSRegExp = sRegExp.map(item => item instanceof RegExp ? item : new RegExp(item))
+    } else if (!(sRegExp instanceof RegExp)) {
+      innerSRegExp = new RegExp(sRegExp)
     } else {
-      await walker(filePath, file)
+      innerSRegExp = sRegExp
+    }
+  }
+
+  return innerSRegExp
+}
+
+
+/** @type {import('@nodutilus/fs').SearchPathByRegExp} */
+function __searchPathByRegExp(sRegExp, path) {
+  if (sRegExp instanceof RegExp) {
+    return sRegExp.test(path)
+  } else {
+    for (const sRE of sRegExp) {
+      if (sRE.test(path)) {
+        return true
+      }
     }
   }
 }
 
 
-/**
- * @param {string} src
- * @param {string} dest
- * @param {number} flags
- * @returns {Promise<void>}
- */
-async function copy(src, dest, flags) {
+/** @type {import('@nodutilus/fs').WalkGeneratorFunction} */
+async function* __walk(path, options) {
+  const { prefix, include, exclude } = options
+  const files = await readdir(path, { withFileTypes: true })
+
+  for (const file of files) {
+    const isDirectory = file.isDirectory()
+    const postfix = isDirectory ? '/' : ''
+    const filePath = prefix + join(path, file.name) + postfix
+    const isInclude = !include || __searchPathByRegExp(include, filePath)
+    const isExclude = exclude ? __searchPathByRegExp(exclude, filePath) : false
+
+    if (isExclude) {
+      continue
+    }
+
+    if (isDirectory) {
+      const nested = isInclude ? yield [filePath, file] : true
+
+      if (nested !== false) {
+        yield* __walk(filePath, options)
+      }
+    } else {
+      if (isInclude) {
+        yield [filePath, file]
+      }
+    }
+  }
+}
+
+
+/** @type {import('@nodutilus/fs').CopyFunction} */
+async function copy(src, dest, options = {}) {
+  const { throwIfExists } = options
   const srcStat = await stat(src)
 
   if (srcStat.isDirectory()) {
-    await __copy(src, dest, flags)
+    await __copy(src, dest, options)
   } else {
-    const excl = flags & COPY_EXCL
-    const fsFlags = excl ? COPYFILE_EXCL : 0
-
-    if (!excl) {
+    if (!throwIfExists) {
       await mkdir(dirname(dest), { recursive: true })
     }
-    await copyFile(src, dest, fsFlags)
+    await copyFile(src, dest, throwIfExists ? COPYFILE_EXCL : 0)
   }
 }
 
 
-/**
- * @param {string} src
- * @param {string} dest
- * @param {number} flags
- * @returns {Promise<void>}
- */
-async function __copy(src, dest, flags) {
-  const mkdirOptions = { recursive: !(flags & COPY_EXCL) }
-  const existentPaths = flags & COPY_RMNONEXISTENT ? [] : false
+/** @type {import('@nodutilus/fs').RecursiveCopyFunction} */
+async function __copy(src, dest, options) {
+  const { throwIfExists, removeNonExists, include, exclude } = options
+  const mkdirOptions = { recursive: !throwIfExists }
+  const existentPaths = removeNonExists ? [] : false
 
   await mkdir(dest, mkdirOptions)
-  await __walk('.', {
-    root: src,
-    walker: async (path, dirent) => {
-      const destPath = join(dest, path)
+  for await (const [path, dirent] of walk(src, { include, exclude })) {
+    const destPath = join(dest, relative(src, path))
 
-      if (existentPaths) {
-        existentPaths.push(destPath)
-      }
-      if (dirent.isDirectory()) {
-        await mkdir(destPath, mkdirOptions)
-      } else {
-        await copyFile(join(src, path), destPath)
-      }
+    if (existentPaths) {
+      existentPaths.push(destPath)
     }
-  })
+    if (dirent.isDirectory()) {
+      await mkdir(destPath, mkdirOptions)
+    } else {
+      await mkdir(dirname(destPath), { recursive: true })
+      await copyFile(path, destPath)
+    }
+  }
   if (existentPaths) {
-    await __walk('.', {
-      root: dest,
-      walker: async path => {
-        const destPath = join(dest, path)
+    const walker = walk(dest)
+    let next = await walker.next()
 
-        if (!existentPaths.includes(destPath)) {
-          await remove(destPath)
+    while (!next.done && next.value) {
+      const [path, dirent] = next.value
 
-          return false
-        }
+      if (!existentPaths.includes(path)) {
+        await remove(path)
       }
-    })
+
+      next = await walker.next(dirent.isDirectory() ? false : null)
+    }
   }
 }
 
 
-/**
- * @param {string} path
- * @returns {Promise<void>}
- */
-async function remove(path) {
-  await rmdir(path, { recursive: true })
+/** @type {import('@nodutilus/fs').RemoveFunction} */
+async function remove(path, options = {}) {
+  const { include, exclude } = options
+
+  if (include || exclude) {
+    await walk(path, { include, exclude }, async (path, dirent) => {
+      await rm(path, { force: true, recursive: true })
+      if (dirent.isDirectory()) {
+        return false
+      }
+    })
+  } else {
+    await rm(path, { force: true, recursive: true })
+  }
 }
 
 
-/**
- * @param {string} path
- * @param {object} defaultValue
- * @returns {Promise<object>}
- */
+/** @type {import('@nodutilus/fs').ReadJSONFunction} */
 async function readJSON(path, defaultValue) {
   const data = await readFile(path, 'utf8').then(JSON.parse).catch(error => {
     if (error.code === 'ENOENT' && typeof defaultValue !== 'undefined') {
@@ -170,11 +184,7 @@ async function readJSON(path, defaultValue) {
 }
 
 
-/**
- * @param {string} path
- * @param {string} defaultValue
- * @returns {Promise<string>}
- */
+/** @type {import('@nodutilus/fs').ReadTextFunction} */
 async function readText(path, defaultValue) {
   const data = await readFile(path, 'utf8').catch(error => {
     if (error.code === 'ENOENT' && typeof defaultValue !== 'undefined') {
@@ -187,27 +197,17 @@ async function readText(path, defaultValue) {
 }
 
 
-/**
- * @param {string} path
- * @param {object} data
- * @param {number} flags
- * @returns {Promise<void>}
- */
-async function writeJSON(path, data, flags) {
-  const jsonData = JSON.stringify(data, null, 2)
+/** @type {import('@nodutilus/fs').WriteJSONFunction} */
+async function writeJSON(path, data, { throwIfExists, space } = {}) {
+  const jsonData = JSON.stringify(data, null, typeof space === 'undefined' ? 2 : space)
 
-  await writeText(path, jsonData, flags)
+  await writeText(path, jsonData, { throwIfExists })
 }
 
 
-/**
- * @param {string} path
- * @param {string} data
- * @param {number} flags
- * @returns {Promise<void>}
- */
-async function writeText(path, data, flags) {
-  const recursive = !(flags & WRITE_EXCL)
+/** @type {import('@nodutilus/fs').WriteTextFunction} */
+async function writeText(path, data, { throwIfExists } = {}) {
+  const recursive = !throwIfExists
 
   if (recursive) {
     await mkdir(dirname(path), { recursive })
@@ -221,7 +221,6 @@ async function writeText(path, data, flags) {
 
 
 export {
-  constants,
   copy,
   readJSON,
   readText,

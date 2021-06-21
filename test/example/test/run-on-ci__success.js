@@ -1,11 +1,14 @@
 import { Test } from '@nodutilus/test'
 
 
+/**
+ *  Успешный тест,
+ *    в результате общий процесс выполнения тестов завершается успешно
+ */
 class Example extends Test {
 
-  success() {
-    return true
-  }
+  /** Успешный тест */
+  success() { }
 
 }
 

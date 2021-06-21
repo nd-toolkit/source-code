@@ -1,3 +1,0 @@
-{
-  "extends": "@nodutilus/nyc-config/babel"
-}

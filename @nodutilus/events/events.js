@@ -1,32 +1,40 @@
-/** @module  @nodutilus/events */
+/**
+ * @module @nodutilus/events
+ * EventEmitter с поддержкой асинхронных событий и Promise.
+ * Реализует модель событий для использования в асинхронных методах с применением Promise и async/await
+ */
 
-/** @typedef {any} Event */
-/** @typedef {function(...any)} Listener */
-/** @typedef {Map<Event, Set<Listener>>} ListenersMap */
-/** @type {WeakMap<EventEmitter, ListenersMap>} */
+/** @typedef {any} Event Имя или уникальный идентификатор события */
+/** @typedef {function(...any):void} Listener Слушатель события */
+/** @typedef {Map<Event, Set<Listener>>} ListenersMap Перечень всех слушателей события */
+/** @type {WeakMap<EventEmitter, ListenersMap>} Хранилище базовых событий для экземпляра EventEmitter */
 const privateEventsMap = new WeakMap()
-/** @type {WeakMap<PromiseEventEmitter, EventEmitter>} */
+/** @type {WeakMap<PromiseEventEmitter, EventEmitter>} Связь для расширения EventEmitter в PromiseEventEmitter */
 const privatePromiseEventEmittersMap = new WeakMap()
-/** @type {WeakMap<EventEmitter, any>} */
+/** @type {WeakMap<EventEmitter, any>} Хранилище всех неудачно завершенных событий для PromiseEventEmitter */
 const privatePromiseEventEmittersReason = new WeakMap()
-/** @type {Object<string, Symbol>} */
+/** @type {Object<string, symbol>} Встроенные события для разрешения результата выполнения PromiseEventEmitter */
 const pemEvents = {
+  /** Событие успешного выполнения всех событий для PromiseEventEmitter */
   resolve: Symbol('PromiseEventEmitter#event:resolve'),
+  /** Событие провала выполнения хотя бы одного из событий для PromiseEventEmitter */
   reject: Symbol('PromiseEventEmitter#event:reject')
 }
 
 /**
- * Управление событиями и подписками, в т.ч. асинхронными
+ * Класс событийной модели поведения.
+ * Управляет событиями и подписками, в т.ч. асинхронными
  */
 class EventEmitter {
 
-  /** @returns {EventEmitter} */
+  /** Инициализация хранилища для обработчиков событий */
   constructor() {
     privateEventsMap.set(this, new Map())
   }
 
   /**
-   * @returns {number}
+   * @returns {number} Количество событий базовых слушателей,
+   *  без учета событий для слушателей объявленных как методы класса
    */
   get count() {
     const events = privateEventsMap.get(this)
@@ -35,8 +43,11 @@ class EventEmitter {
   }
 
   /**
-   * @param {Event} event
-   * @returns {number}
+   * Количество базовых слушателей определенного события,
+   *  без учета событий и слушателей объявленных как методы класса
+   *
+   * @param {Event} event Имя или уникальный идентификатор события
+   * @returns {number} Количество слушателей события
    */
   listenerCount(event) {
     const listeners = privateEventsMap.get(this).get(event)
@@ -49,9 +60,11 @@ class EventEmitter {
   }
 
   /**
-   * @param {EventEmitter} instance
-   * @param {Event} event
-   * @param  {...any} args
+   * Вызов слушателя события, объявленного как метод класса
+   *
+   * @param {EventEmitter} instance Экземпляр класс событийной модели
+   * @param {Event} event Имя или уникальный идентификатор события
+   * @param  {...any} args Произвольные аргументы события
    * @returns {Promise<void>}
    */
   static async emitForClassMethod(instance, event, ...args) {
@@ -64,9 +77,11 @@ class EventEmitter {
   }
 
   /**
-   * @param {EventEmitter} instance
-   * @param {Event} event
-   * @param  {...any} args
+   * Вызов базовых слушателей события, добавленных через методы on/once
+   *
+   * @param {EventEmitter} instance Экземпляр класс событийной модели
+   * @param {Event} event Имя или уникальный идентификатор события
+   * @param  {...any} args Произвольные аргументы события
    * @returns {Promise<void>}
    */
   static async emitForBasicListeners(instance, event, ...args) {
@@ -80,8 +95,10 @@ class EventEmitter {
   }
 
   /**
-   * @param {Event} event
-   * @param  {...any} args
+   * Вызов события
+   *
+   * @param {Event} event Имя или уникальный идентификатор события
+   * @param  {...any} args Произвольные аргументы события
    * @returns {Promise<void>}
    */
   async emit(event, ...args) {
@@ -90,17 +107,21 @@ class EventEmitter {
   }
 
   /**
-   * @param {Event} event
-   * @returns {boolean}
+   * Проверка наличия подписчика на событие
+   *
+   * @param {Event} event Имя или уникальный идентификатор события
+   * @returns {boolean} true - если подписчик найден
    */
   has(event) {
     return privateEventsMap.get(this).has(event)
   }
 
   /**
-   * @param {Event} event
-   * @param  {Listener} listener
-   * @returns {EventEmitter}
+   * Подписка на событие
+   *
+   * @param {Event} event Имя или уникальный идентификатор события
+   * @param  {Listener} listener Слушатель события
+   * @returns {EventEmitter} Собственный инстанс класса для чейнинг паттерна
    */
   on(event, listener) {
     const events = privateEventsMap.get(this)
@@ -115,9 +136,11 @@ class EventEmitter {
   }
 
   /**
-   * @param {Event} event
-   * @param  {Listener} listener
-   * @returns {EventEmitter}
+   * Отписка от события
+   *
+   * @param {Event} event Имя или уникальный идентификатор события
+   * @param  {Listener} [listener] Слушатель события, если не передан, отпишет всех кроме методов класса
+   * @returns {EventEmitter} Собственный инстанс класса для чейнинг паттерна
    */
   off(event, listener) {
     const events = privateEventsMap.get(this)
@@ -134,8 +157,12 @@ class EventEmitter {
   }
 
   /**
-   * @param {Event} event
-   * @returns {Promise<Array<any>>}
+   * Однократная подписка на событие.
+   * Внутри создается временный обработчик, который автоматически отписывается после вызова события,
+   *  а из вызова once в основной поток выполнения возвращаются аргументы вызовы события.
+   *
+   * @param {Event} event Имя или уникальный идентификатор события
+   * @returns {Promise<Array<any>>} Произвольные аргументы события
    */
   once(event) {
     const events = privateEventsMap.get(this)
@@ -161,17 +188,20 @@ class EventEmitter {
 }
 
 /**
- * Управление событиями в режиме <Promise>
+ * Класс событийной модели поведения с наследованием поведения <Promise>.
+ * Включает все возможности EventEmitter,
+ *  расширяя модель возможностью использования её в качестве экземпляра <Promise>
  */
 class PromiseEventEmitter extends Promise {
 
   /**
-   * @callback AsyncExecutor
-   * @param {PromiseEventEmitter} emitter
-   * @returns {Promise<void>}
+   * @callback AsyncExecutor Обработчик выполнения PromiseEventEmitter.
+   *  Используется по аналогии с Promise для поддержки совместимости
+   * @param {PromiseEventEmitter} emitter Экземпляр класса для работы с событиями
+   * @returns {void|Promise<void>}
    */
   /**
-   * @param {AsyncExecutor} [asyncExecutor]
+   * @param {AsyncExecutor} [asyncExecutor] Функция-исполнитель для <Promise>
    */
   constructor(asyncExecutor) {
     const executorIsFunction = typeof asyncExecutor === 'function'
@@ -208,19 +238,24 @@ class PromiseEventEmitter extends Promise {
   }
 
   /**
-   * @callback onFulfilledFunction
-   * @param {any} value
-   * @returns {Promise<any>}
+   * @callback onFulfilledFunction Обработчик успешного выполнения <Promise>
+   * @param {any} value Возвращаемое из <Promise> значение
+   * @returns {void|Promise<any>} Экземпляр нового <Promise> для чейнинг паттерна
    */
   /**
-   * @callback onRejectedFunction
-   * @param {any} reason
-   * @returns {Promise<any>}
+   * @callback onRejectedFunction Обработчик провала выполнения <Promise>
+   * @param {any} reason Сообщение об ошибке выполнения
+   * @returns {void|Promise<any>} Экземпляр нового <Promise> для чейнинг паттерна
    */
   /**
-   * @param {onFulfilledFunction} [onFulfilled]
-   * @param {onRejectedFunction} [onRejected]
-   * @returns {Promise<any>}
+   * Переопределяет Promise#then для возвращения экземпляра Promise вместо PromiseEventEmitter,
+   *  для предотвращения наследования событийной модели в чейнинг паттерне.
+   * Зачем? - События не передается новому экземпляру,
+   *  поэтому модель событий не должна наследоваться в новый Promise, чтобы не замедлять работу.
+   *
+   * @param {onFulfilledFunction} [onFulfilled] Обработчик успешного выполнения <Promise>
+   * @param {onRejectedFunction} [onRejected] Обработчик провала выполнения <Promise>
+   * @returns {Promise<any>} Экземпляр нового <Promise> для чейнинг паттерна
    */
   ['then'](onFulfilled, onRejected) {
     return new Promise((resolve, reject) => {
@@ -251,7 +286,8 @@ class PromiseEventEmitter extends Promise {
   }
 
   /**
-   * @returns {number}
+   * @returns {number} Количество событий базовых слушателей,
+   *  без учета событий для слушателей объявленных как методы класса
    */
   get count() {
     const emitter = privatePromiseEventEmittersMap.get(this)
@@ -260,8 +296,11 @@ class PromiseEventEmitter extends Promise {
   }
 
   /**
-   * @param {Event} event
-   * @returns {number}
+   * Количество базовых слушателей определенного события,
+   *  без учета событий и слушателей объявленных как методы класса
+   *
+   * @param {Event} event Имя или уникальный идентификатор события
+   * @returns {number} Количество слушателей события
    */
   listenerCount(event) {
     const emitter = privatePromiseEventEmittersMap.get(this)
@@ -270,16 +309,10 @@ class PromiseEventEmitter extends Promise {
   }
 
   /**
-   * @param  {...any} args
-   * @returns {Promise<void>}
-   */
-  static async emitForClassMethod(...args) {
-    await EventEmitter.emitForClassMethod.apply(PromiseEventEmitter, args)
-  }
-
-  /**
-   * @param {Event} event
-   * @param  {...any} args
+   * Вызов события
+   *
+   * @param {Event} event Имя или уникальный идентификатор события
+   * @param  {...any} args Произвольные аргументы события
    * @returns {Promise<void>}
    */
   emit(event, ...args) {
@@ -293,7 +326,7 @@ class PromiseEventEmitter extends Promise {
           reject(privatePromiseEventEmittersReason.get(emitter))
         } else {
           (async () => {
-            await PromiseEventEmitter.emitForClassMethod(self, event, ...args)
+            await EventEmitter.emitForClassMethod.apply(PromiseEventEmitter, [self, event, ...args])
             await EventEmitter.emitForBasicListeners(emitter, event, ...args)
           })().then(resolve, reject)
         }
@@ -302,8 +335,10 @@ class PromiseEventEmitter extends Promise {
   }
 
   /**
-   * @param {Event} event
-   * @returns {boolean}
+   * Проверка наличия подписчика на событие
+   *
+   * @param {Event} event Имя или уникальный идентификатор события
+   * @returns {boolean} true - если подписчик найден
    */
   has(event) {
     const emitter = privatePromiseEventEmittersMap.get(this)
@@ -312,9 +347,11 @@ class PromiseEventEmitter extends Promise {
   }
 
   /**
-   * @param {Event} event
-   * @param  {Listener} listener
-   * @returns {PromiseEventEmitter}
+   * Подписка на событие
+   *
+   * @param {Event} event Имя или уникальный идентификатор события
+   * @param  {Listener} listener Слушатель события
+   * @returns {PromiseEventEmitter} Собственный инстанс класса для чейнинг паттерна
    */
   on(event, listener) {
     const emitter = privatePromiseEventEmittersMap.get(this)
@@ -325,9 +362,11 @@ class PromiseEventEmitter extends Promise {
   }
 
   /**
-   * @param {Event} event
-   * @param  {Listener} listener
-   * @returns {PromiseEventEmitter}
+   * Отписка от события
+   *
+   * @param {Event} event Имя или уникальный идентификатор события
+   * @param  {Listener} [listener] Слушатель события, если не передан, отпишет всех кроме методов класса
+   * @returns {PromiseEventEmitter} Собственный инстанс класса для чейнинг паттерна
    */
   off(event, listener) {
     const emitter = privatePromiseEventEmittersMap.get(this)
@@ -337,9 +376,14 @@ class PromiseEventEmitter extends Promise {
     return this
   }
 
+
   /**
-   * @param {Event} event
-   * @returns {Promise<Array<any>>}
+   * Однократная подписка на событие.
+   * Внутри создается временный обработчик, который автоматически отписывается после вызова события,
+   *  а из вызова once в основной поток выполнения возвращаются аргументы вызовы события.
+   *
+   * @param {Event} event Имя или уникальный идентификатор события
+   * @returns {Promise<Array<any>>} Произвольные аргументы события
    */
   once(event) {
     const emitter = privatePromiseEventEmittersMap.get(this)
@@ -359,7 +403,10 @@ class PromiseEventEmitter extends Promise {
   }
 
   /**
-   * @param {any} value
+   * Отправляет событие о успешном выполнении <Promise>.
+   * PromiseEventEmitter разрешиться в успех
+   *
+   * @param {any} value Возвращаемое из <Promise> значение
    */
   resolve(value) {
     const emitter = privatePromiseEventEmittersMap.get(this)
@@ -368,7 +415,10 @@ class PromiseEventEmitter extends Promise {
   }
 
   /**
-   * @param {any} reason
+   * Отправляет событие о провале выполнении <Promise>.
+   * PromiseEventEmitter разрешиться ошибкой
+   *
+   * @param {any} reason Сообщение об ошибке выполнения
    */
   reject(reason) {
     const emitter = privatePromiseEventEmittersMap.get(this)

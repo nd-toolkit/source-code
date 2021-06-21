@@ -1,0 +1,6 @@
+{
+  "extends": "@nodutilus/project-config/tsconfig",
+  "exclude": [
+    "coverage/**"
+  ]
+}

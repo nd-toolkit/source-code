@@ -2,9 +2,10 @@
   "repository": "github:nodutilus/nodutilus",
   "license": "Unlicense",
   "type": "module",
-  "dependencies": {
-    "@nodutilus/ci-cd": "latest",
-    "@nodutilus/eslint-config": "latest",
-    "@nodutilus/nyc-config": "latest"
+  "devDependencies": {
+    "@nodutilus/project-config": "latest"
+  },
+  "scripts": {
+    "pre-test": "node test/pre-test"
   }
 }

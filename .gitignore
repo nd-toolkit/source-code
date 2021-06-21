@@ -9,5 +9,6 @@ test/example/fs/symlink
 test/example/fs/remove
 test/example/fs/write
 
-# Папка сборки модулей, хранения отчетов и пр.
+# Папки сборки модулей, хранения отчетов и пр.
 build
+coverage

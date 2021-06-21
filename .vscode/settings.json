@@ -8,8 +8,8 @@
   "files.autoSaveDelay": 3000,
   "files.trimTrailingWhitespace": true,
   "files.eol": "\n",
+  "files.insertFinalNewline": true,
   "[javascript]": {
-    "files.insertFinalNewline": true,
     "editor.defaultFormatter": "vscode.typescript-language-features"
   },
   "[json]": {
@@ -18,7 +18,5 @@
   "[jsonс]": {
     "editor.defaultFormatter": "vscode.json-language-features"
   },
-  "javascript.validate.enable": false,
-  "eslint.enable": true,
-  "npm.enableScriptExplorer": true
+  "javascript.validate.enable": false
 }
